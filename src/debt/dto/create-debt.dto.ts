@@ -1,5 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsDefined, IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsDefined,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateDebtDto {
   @ApiProperty()
@@ -30,4 +36,9 @@ export class CreateDebtDto {
   @IsDefined({ message: 'description property mavjud bolishi shart' })
   @IsString()
   description: string;
+
+  @ApiPropertyOptional({ description: 'Qarzni rasmiylashtirgan kassir id' })
+  @IsOptional()
+  @IsNumber()
+  cashier_id?: number;
 }

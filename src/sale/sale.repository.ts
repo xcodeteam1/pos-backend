@@ -1,7 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import knex from 'knex';
 import knexConfig from '../../knexfile';
 const db = knex(knexConfig);
+
+type Binding = string | number;
+type PaymentType = 'cash' | 'terminal' | 'online';
+
+export interface OrdersFilter {
+  from?: string;
+  to?: string;
+  branch_id?: number;
+  cashier_id?: number;
+  payment_type?: PaymentType;
+}
 
 const selectDailySaleQurey: string = `
         SELECT
@@ -25,9 +37,11 @@ INSERT INTO sale(
   quantity,
   cashier_id,
   description,
-  payment_type
+  payment_type,
+  real_price_at_sale,
+  receipt_id
 )
-VALUES(?,?,?,?,?,?)
+VALUES(?,?,?,?,?,?, (SELECT real_price FROM product WHERE barcode = ?), ?)
 RETURNING *;
 `;
 
@@ -288,6 +302,116 @@ export class SaleRepo {
     return data.rows;
   }
 
+  private buildOrdersWhere(f: OrdersFilter): {
+    where: string;
+    params: Binding[];
+  } {
+    const clauses: string[] = ['s.is_debt = false'];
+    const params: Binding[] = [];
+
+    if (f.from) {
+      clauses.push('s.created_at >= ?');
+      params.push(f.from);
+    }
+    if (f.to) {
+      clauses.push('s.created_at < ?');
+      params.push(f.to);
+    }
+    if (f.branch_id) {
+      clauses.push('c.branch_id = ?');
+      params.push(f.branch_id);
+    }
+    if (f.cashier_id) {
+      clauses.push('s.cashier_id = ?');
+      params.push(f.cashier_id);
+    }
+    if (f.payment_type) {
+      clauses.push('s.payment_type = ?');
+      params.push(f.payment_type);
+    }
+
+    return { where: clauses.join(' AND '), params };
+  }
+
+  /** Список заказов (чеков) с агрегатами: время, кассир, сумма, число позиций. */
+  async ordersList(f: OrdersFilter, page: number, pageSize: number) {
+    const { where, params } = this.buildOrdersWhere(f);
+    const offset = (page - 1) * pageSize;
+
+    const res = await db.raw(
+      `
+      SELECT
+        s.receipt_id,
+        MIN(s.created_at) AS created_at,
+        s.cashier_id,
+        c.name AS cashier_name,
+        b.name AS branch_name,
+        s.payment_type,
+        COUNT(*) AS items_count,
+        COALESCE(SUM(s.quantity), 0) AS total_quantity,
+        COALESCE(SUM(s.price * s.quantity), 0) AS total_amount
+      FROM sale s
+      LEFT JOIN cashier c ON c.id = s.cashier_id
+      LEFT JOIN branch b ON b.id = c.branch_id
+      WHERE ${where}
+      GROUP BY s.receipt_id, s.cashier_id, c.name, b.name, s.payment_type
+      ORDER BY MIN(s.created_at) DESC
+      LIMIT ? OFFSET ?
+      `,
+      [...params, pageSize, offset],
+    );
+
+    return res.rows;
+  }
+
+  /** Общее число заказов (чеков) для пагинации. */
+  async ordersCount(f: OrdersFilter): Promise<number> {
+    const { where, params } = this.buildOrdersWhere(f);
+
+    const res = await db.raw(
+      `
+      SELECT COUNT(DISTINCT s.receipt_id) AS total
+      FROM sale s
+      LEFT JOIN cashier c ON c.id = s.cashier_id
+      WHERE ${where}
+      `,
+      params,
+    );
+
+    return Number(res.rows[0]?.total ?? 0);
+  }
+
+  /** Позиции конкретного заказа (чека). */
+  async orderItems(receiptId: string) {
+    const res = await db.raw(
+      `
+      SELECT
+        s.id,
+        s.item_barcode,
+        p.name AS product_name,
+        s.description,
+        s.price,
+        s.quantity,
+        s.is_debt,
+        s.payment_type,
+        s.created_at,
+        s.cashier_id,
+        c.name AS cashier_name,
+        b.name AS branch_name,
+        (s.price * s.quantity) AS amount
+      FROM sale s
+      JOIN product p ON p.barcode = s.item_barcode
+      LEFT JOIN cashier c ON c.id = s.cashier_id
+      LEFT JOIN branch b ON b.id = c.branch_id
+      WHERE s.receipt_id = ?
+      ORDER BY s.id
+      `,
+      [receiptId],
+    );
+
+    return res.rows;
+  }
+
   async selectByIDCashier(id: number) {
     const res = await db.raw(selectByIDCashierQuery, [id]);
     return res.rows;
@@ -303,6 +427,8 @@ export class SaleRepo {
     }[],
   ) {
     const trx = await db.transaction();
+    // единый чек на всю корзину (все позиции одной продажи)
+    const receiptId = randomUUID();
 
     try {
       const results = [];
@@ -317,6 +443,8 @@ export class SaleRepo {
           sale.cashier_id,
           sale.description ?? '',
           paymentType, // 👈 doim bor
+          sale.item_barcode, // 👈 real_price_at_sale snapshot uchun
+          receiptId, // 👈 receipt_id (единый на корзину)
         ]);
 
         await trx.raw(updateProductQuantityQuery, [

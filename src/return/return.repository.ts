@@ -7,9 +7,11 @@ const createReturnQuery: string = `
         INSERT INTO return(
         item_barcode,
         quantity,
-        description
+        description,
+        sale_id,
+        debt_id
         )
-        VALUES(?,?,?)
+        VALUES(?,?,?,?,?)
         RETURNING *;
 `;
 
@@ -33,11 +35,15 @@ export class ReturnRepo {
     item_barcode: string;
     quantity: number;
     description: string;
+    sale_id?: number;
+    debt_id?: number;
   }) {
     const res = await db.raw(createReturnQuery, [
       data.item_barcode,
       data.quantity,
       data.description,
+      data.sale_id ?? null,
+      data.debt_id ?? null,
     ]);
     await db.raw(updateProductQuantityQuery, [
       data.quantity,

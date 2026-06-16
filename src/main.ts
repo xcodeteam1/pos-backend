@@ -35,13 +35,38 @@ async function bootstrap() {
     prefix: '/public/images',
   });
 
-  // Swagger konfiguratsiyasi
   const config = new DocumentBuilder()
-    .setTitle('Scanner-POS')
-    .setDescription('Scanner-POS API')
+    .setTitle('Scanner-POS API')
+    .setDescription(
+      [
+        'REST API POS-системы: продажи, товары, долги, возвраты, аналитика.',
+        '',
+        '**Авторизация:** после `POST /auth/login` передавайте `Authorization: Bearer <token>`.',
+        '',
+        '**Пагинация:** `page` (от 1), `pageSize` (по умолчанию 10).',
+        '',
+        '**Загрузка файлов:** multipart/form-data, поле `images` или `image`.',
+      ].join('\n'),
+    )
     .setVersion('1.0')
-    .addServer('http://213.139.210.248:3017', 'production server')
-    .addServer('http://localhost:3000', 'local server')
+    .addTag('Auth', 'Авторизация admin / cashier')
+    .addTag('Cashier', 'CRUD кассиров')
+    .addTag('Branch', 'Филиалы')
+    .addTag('Product', 'Товары и изображения')
+    .addTag('Category', 'Категории и изображения')
+    .addTag('Sale', 'Продажи и отчёты')
+    .addTag('Debt', 'Долги клиентов')
+    .addTag('Customer', 'Клиенты')
+    .addTag('Return', 'Возвраты товаров')
+    .addTag('Main', 'Дашборд (legacy)')
+    .addTag('Analytics', 'Аналитика и статистика')
+    .addTag('Notification', 'Уведомления')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'JWT',
+    )
+    .addServer('http://213.139.210.248:3017', 'Production')
+    .addServer(`http://localhost:${process.env.PORT ?? 3017}`, 'Local')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

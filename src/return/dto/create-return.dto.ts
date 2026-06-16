@@ -1,5 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsDefined, IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsDefined,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateReturnDto {
   @ApiProperty()
@@ -18,4 +24,14 @@ export class CreateReturnDto {
   @IsDefined({ message: 'description property mavjud bolishi shart' })
   @IsString()
   description: string;
+
+  @ApiPropertyOptional({ description: "Bog'langan sale id (aniq qaytarish uchun)" })
+  @IsOptional()
+  @IsNumber()
+  sale_id?: number;
+
+  @ApiPropertyOptional({ description: "Bog'langan debt id (qarz qaytarishi uchun)" })
+  @IsOptional()
+  @IsNumber()
+  debt_id?: number;
 }

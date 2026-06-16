@@ -13,6 +13,7 @@ const config = {
   },
   migrations: {
     directory: './migrations',
+    loadExtensions: ['.ts'],
   },
 };
 

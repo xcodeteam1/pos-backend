@@ -215,6 +215,7 @@ export class DebtRepo {
       customer_id: number;
       amount: number;
       description: string;
+      cashier_id?: number;
     }[],
   ) {
     return await db.transaction(async (trx) => {
@@ -238,6 +239,8 @@ export class DebtRepo {
             amount: debt.amount, // qolgan qarz
             debt_amount: debt.amount, // umumiy qarz
             description: debt.description,
+            cashier_id: debt.cashier_id ?? null,
+            real_price_at_sale: product.real_price, // sebestoimost snapshot
           })
           .returning('*');
 

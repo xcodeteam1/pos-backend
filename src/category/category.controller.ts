@@ -14,7 +14,15 @@ import {
   Query,
   BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiBody, ApiConsumes } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBody,
+  ApiConsumes,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+} from '@nestjs/swagger';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { multerConfig } from 'src/common/middleware/multer.config';
@@ -22,6 +30,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { PatchCategoryDto } from './dto/patch-category.dto';
 import { GetCategoryDto } from './dto/get-category.dto';
+import { ApiStandardResponses } from 'src/common/swagger/api-responses';
 
 @ApiTags('Category')
 @Controller('category')
@@ -30,6 +39,12 @@ export class CategoryController {
 
   @HttpCode(200)
   @Get('list')
+  @ApiOperation({
+    summary: 'Список категорий',
+    description: 'Пагинация и поиск по name или id (q).',
+  })
+  @ApiOkResponse({ description: 'Список категорий' })
+  @ApiStandardResponses()
   async getAllCategories(@Query() query: GetCategoryDto) {
     return this.categoryService.getCategories(
       query.page,
@@ -40,6 +55,10 @@ export class CategoryController {
 
   @HttpCode(200)
   @Get(':id')
+  @ApiOperation({ summary: 'Категория по ID' })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
+  @ApiOkResponse({ description: 'Данные категории' })
+  @ApiStandardResponses()
   async getCategoryById(@Param('id', ParseIntPipe) id: number) {
     return await this.categoryService.selectByIDCategory(id);
   }
@@ -47,23 +66,27 @@ export class CategoryController {
   @HttpCode(201)
   @Post('create')
   @UseInterceptors(FilesInterceptor('images', 10, multerConfig))
+  @ApiOperation({
+    summary: 'Создать категорию',
+    description: 'multipart/form-data с опциональными изображениями.',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
+      required: ['name'],
       properties: {
-        name: { type: 'string' },
-        description: { type: 'string' },
+        name: { type: 'string', example: 'Electronics' },
+        description: { type: 'string', example: 'Electronic devices' },
         images: {
           type: 'array',
-          items: {
-            type: 'string',
-            format: 'binary',
-          },
+          items: { type: 'string', format: 'binary' },
         },
       },
     },
   })
+  @ApiCreatedResponse({ description: 'Созданная категория' })
+  @ApiStandardResponses()
   async createCategory(
     @UploadedFiles() files: Express.Multer.File[],
     @Body() dto: CreateCategoryDto,
@@ -85,6 +108,11 @@ export class CategoryController {
   @HttpCode(200)
   @Put('/update/:id')
   @UseInterceptors(FilesInterceptor('images', 10, multerConfig))
+  @ApiOperation({
+    summary: 'Обновить категорию',
+    description: 'Можно загрузить новые images и передать существующие imageUrls.',
+  })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -92,16 +120,20 @@ export class CategoryController {
       properties: {
         name: { type: 'string' },
         description: { type: 'string' },
+        imageUrls: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['http://localhost:3017/public/images/old.png'],
+        },
         images: {
           type: 'array',
-          items: {
-            type: 'string',
-            format: 'binary',
-          },
+          items: { type: 'string', format: 'binary' },
         },
       },
     },
   })
+  @ApiOkResponse({ description: 'Обновлённая категория' })
+  @ApiStandardResponses()
   async updateCategory(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFiles() images: Express.Multer.File[],
@@ -118,16 +150,19 @@ export class CategoryController {
         ? [...uploadedImages, ...existingImages]
         : undefined;
 
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
     if (dto.name) updateData.name = dto.name;
     if (dto.description) updateData.description = dto.description;
     if (finalImageUrls) updateData.imageUrls = finalImageUrls;
 
     return await this.categoryService.updateCategory(id, updateData);
   }
+
   @Put('images/add/:id')
   @HttpCode(200)
   @UseInterceptors(FilesInterceptor('images', 10, multerConfig))
+  @ApiOperation({ summary: 'Добавить изображения к категории' })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -135,14 +170,13 @@ export class CategoryController {
       properties: {
         images: {
           type: 'array',
-          items: {
-            type: 'string',
-            format: 'binary',
-          },
+          items: { type: 'string', format: 'binary' },
         },
       },
     },
   })
+  @ApiOkResponse({ description: 'Категория с новыми изображениями' })
+  @ApiStandardResponses()
   async addCategoryImages(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFiles() files: Express.Multer.File[],
@@ -157,11 +191,15 @@ export class CategoryController {
 
     return this.categoryService.addCategoryImages(id, imageUrls);
   }
+
   @Put('images/delete/:id')
   @HttpCode(200)
+  @ApiOperation({ summary: 'Удалить изображения категории по URL' })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
   @ApiBody({
     schema: {
       type: 'object',
+      required: ['removeImages'],
       properties: {
         removeImages: {
           type: 'array',
@@ -171,6 +209,8 @@ export class CategoryController {
       },
     },
   })
+  @ApiOkResponse({ description: 'Категория после удаления изображений' })
+  @ApiStandardResponses()
   async deleteCategoryImages(
     @Param('id', ParseIntPipe) id: number,
     @Body('removeImages') removeImages: string[] | string,
@@ -187,25 +227,28 @@ export class CategoryController {
 
     return this.categoryService.deleteCategoryImages(id, imagesToRemove);
   }
+
   @Put('image/replace/:id')
   @HttpCode(200)
   @UseInterceptors(FilesInterceptor('image', 1, multerConfig))
+  @ApiOperation({
+    summary: 'Заменить одно изображение категории',
+    description: 'Передаётся oldImage (URL) и новый файл image.',
+  })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
+      required: ['oldImage', 'image'],
       properties: {
-        oldImage: {
-          type: 'string',
-          example: 'http://backend/old-image.jpg',
-        },
-        image: {
-          type: 'string',
-          format: 'binary',
-        },
+        oldImage: { type: 'string', example: 'http://backend/old-image.jpg' },
+        image: { type: 'string', format: 'binary' },
       },
     },
   })
+  @ApiOkResponse({ description: 'Категория с заменённым изображением' })
+  @ApiStandardResponses()
   async replaceCategoryImage(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFiles() files: Express.Multer.File[],
@@ -226,6 +269,13 @@ export class CategoryController {
 
   @HttpCode(200)
   @Patch(':id')
+  @ApiOperation({
+    summary: 'Частичное обновление категории',
+    description: 'PATCH name и/или description без загрузки файлов.',
+  })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
+  @ApiOkResponse({ description: 'Обновлённая категория' })
+  @ApiStandardResponses()
   async patchCategory(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: PatchCategoryDto,
@@ -236,8 +286,13 @@ export class CategoryController {
       dto.description,
     );
   }
+
   @HttpCode(200)
   @Delete('/delete/:id')
+  @ApiOperation({ summary: 'Удалить категорию' })
+  @ApiParam({ name: 'id', type: Number, example: 1 })
+  @ApiOkResponse({ description: 'Результат удаления' })
+  @ApiStandardResponses()
   async deleteCategory(@Param('id', ParseIntPipe) id: number) {
     return await this.categoryService.deleteCategory(id);
   }

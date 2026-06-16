@@ -7,24 +7,29 @@ import {
   Get,
   HttpCode,
   Param,
-  Patch,
   Post,
   Put,
   Query,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import {
-  FileFieldsInterceptor,
-  FilesInterceptor,
-} from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { multerConfig } from 'src/common/middleware/multer.config';
 import { SelectAllProductQueryDto } from './dto/select-all-product.dto';
-import { PatchProductDto } from './dto/patch-product.dto';
+import { ApiStandardResponses } from 'src/common/swagger/api-responses';
 dotenv.config();
 
 @ApiTags('Product')
@@ -33,6 +38,13 @@ export class ProductController {
   constructor(private readonly service: ProductService) {}
 
   @Get('list')
+  @ApiOperation({
+    summary: 'Список товаров',
+    description:
+      'Пагинация и фильтры: q, tegs, category_id, min_price, max_price.',
+  })
+  @ApiOkResponse({ description: 'Список товаров с пагинацией' })
+  @ApiStandardResponses()
   selectAllProductCont(@Query() query: SelectAllProductQueryDto) {
     return this.service.selectAllProduct(
       Number(query.page),
@@ -47,12 +59,20 @@ export class ProductController {
 
   @HttpCode(200)
   @Get('search')
+  @ApiOperation({ summary: 'Быстрый поиск товара' })
+  @ApiQuery({ name: 'q', required: true, example: 'olma', description: 'Штрихкод или название' })
+  @ApiOkResponse({ description: 'Найденные товары' })
+  @ApiStandardResponses()
   searchProductCont(@Query('q') q: string) {
     return this.service.searchProduct(q);
   }
 
   @HttpCode(200)
   @Get(':barcode')
+  @ApiOperation({ summary: 'Товар по штрихкоду' })
+  @ApiParam({ name: 'barcode', example: '123456789', description: 'Уникальный штрихкод' })
+  @ApiOkResponse({ description: 'Данные товара' })
+  @ApiStandardResponses()
   selectByIDProductCont(@Param('barcode') barcode: string) {
     return this.service.selectByIDProduct(barcode);
   }
@@ -60,20 +80,23 @@ export class ProductController {
   @HttpCode(201)
   @Post('create')
   @UseInterceptors(FilesInterceptor('images', 10, multerConfig))
+  @ApiOperation({
+    summary: 'Создать товар',
+    description: 'multipart/form-data. Обязательны barcode, name, branch_id, category_id.',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       required: ['barcode', 'name', 'branch_id', 'category_id'],
-
       properties: {
-        barcode: { type: 'string' },
-        name: { type: 'string' },
-        branch_id: { type: 'number' },
-        category_id: { type: 'number' },
-        price: { type: 'number' },
-        real_price: { type: 'number' },
-        stock: { type: 'number' },
+        barcode: { type: 'string', example: '123456789' },
+        name: { type: 'string', example: 'Laptop' },
+        branch_id: { type: 'number', example: 1 },
+        category_id: { type: 'number', example: 2 },
+        price: { type: 'number', example: 1500 },
+        real_price: { type: 'number', example: 1400 },
+        stock: { type: 'number', example: 10 },
         description: { type: 'string' },
         tegs: {
           type: 'array',
@@ -81,14 +104,13 @@ export class ProductController {
         },
         images: {
           type: 'array',
-          items: {
-            type: 'string',
-            format: 'binary',
-          },
+          items: { type: 'string', format: 'binary' },
         },
       },
     },
   })
+  @ApiCreatedResponse({ description: 'Созданный товар' })
+  @ApiStandardResponses()
   async createProductCont(
     @UploadedFiles() files: Express.Multer.File[],
     @Body() body: CreateProductDto,
@@ -96,13 +118,14 @@ export class ProductController {
     const imageUrls = Array.isArray(files)
       ? files.map((file) => `${process.env.BACKEND_URL}/${file?.filename}`)
       : [];
-    console.log('hello');
-    console.log(body.tegs);
     return this.service.createProduct({ ...body, imageUrls });
   }
+
   @HttpCode(200)
   @Put('/update/:barcode')
-  @ApiConsumes('application/json') // 🔥 MUHIM
+  @ApiOperation({ summary: 'Обновить товар (JSON)' })
+  @ApiParam({ name: 'barcode', example: '123456789' })
+  @ApiConsumes('application/json')
   @ApiBody({
     schema: {
       type: 'object',
@@ -122,6 +145,8 @@ export class ProductController {
       },
     },
   })
+  @ApiOkResponse({ description: 'Обновлённый товар' })
+  @ApiStandardResponses()
   async updateProduct(
     @Param('barcode') barcode: string,
     @Body() body: UpdateProductDto,
@@ -129,35 +154,14 @@ export class ProductController {
     return this.service.updateProduct(barcode, body);
   }
 
-  @HttpCode(200)
-  // @Patch('/patch/:barcode')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        barcode: { type: 'string' },
-        name: { type: 'string' },
-        branch_id: { type: 'number' },
-        category_id: { type: 'number' },
-        price: { type: 'number' },
-        stock: { type: 'number' },
-        real_price: { type: 'number' },
-        description: { type: 'string' },
-      },
-    },
-  })
-  async patchProduct(
-    @Param('barcode') barcode: string,
-    @Body() body: PatchProductDto,
-  ) {
-    return this.service.patchProduct(barcode, body);
-  }
-  // product.controller.ts
-  // product.controller.ts
-
   @Put('image/replace/:barcode')
   @HttpCode(200)
   @UseInterceptors(FilesInterceptor('image', 1, multerConfig))
+  @ApiOperation({
+    summary: 'Заменить одно изображение товара',
+    description: 'Передаётся oldImage (URL) и новый файл image.',
+  })
+  @ApiParam({ name: 'barcode', example: '123456789' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -165,13 +169,12 @@ export class ProductController {
       required: ['oldImage', 'image'],
       properties: {
         oldImage: { type: 'string', example: 'http://backend/old-image.jpg' },
-        image: {
-          type: 'string',
-          format: 'binary',
-        },
+        image: { type: 'string', format: 'binary' },
       },
     },
   })
+  @ApiOkResponse({ description: 'Товар с обновлённым изображением' })
+  @ApiStandardResponses()
   async replaceProductImage(
     @Param('barcode') barcode: string,
     @UploadedFiles() files: Express.Multer.File[],
@@ -193,6 +196,8 @@ export class ProductController {
   @Put('images/add/:barcode')
   @HttpCode(200)
   @UseInterceptors(FilesInterceptor('images', 10, multerConfig))
+  @ApiOperation({ summary: 'Добавить изображения к товару' })
+  @ApiParam({ name: 'barcode', example: '123456789' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -201,14 +206,13 @@ export class ProductController {
       properties: {
         images: {
           type: 'array',
-          items: {
-            type: 'string',
-            format: 'binary',
-          },
+          items: { type: 'string', format: 'binary' },
         },
       },
     },
   })
+  @ApiOkResponse({ description: 'Товар с новыми изображениями' })
+  @ApiStandardResponses()
   async addProductImages(
     @Param('barcode') barcode: string,
     @UploadedFiles() files: Express.Multer.File[],
@@ -224,10 +228,10 @@ export class ProductController {
     return this.service.addProductImages(barcode, imageUrls);
   }
 
-  // product.controller.ts
-
   @Put('images/delete/:barcode')
   @HttpCode(200)
+  @ApiOperation({ summary: 'Удалить изображения товара по URL' })
+  @ApiParam({ name: 'barcode', example: '123456789' })
   @ApiConsumes('application/json')
   @ApiBody({
     schema: {
@@ -242,6 +246,8 @@ export class ProductController {
       },
     },
   })
+  @ApiOkResponse({ description: 'Товар после удаления изображений' })
+  @ApiStandardResponses()
   async deleteProductImages(
     @Param('barcode') barcode: string,
     @Body('removeImages') removeImages: string[] | string,
@@ -261,6 +267,10 @@ export class ProductController {
 
   @HttpCode(200)
   @Delete('/delete/:barcode')
+  @ApiOperation({ summary: 'Удалить товар' })
+  @ApiParam({ name: 'barcode', example: '123456789' })
+  @ApiOkResponse({ description: 'Результат удаления' })
+  @ApiStandardResponses()
   deleteProductCont(@Param('barcode') barcode: string) {
     return this.service.deleteProduct(barcode);
   }

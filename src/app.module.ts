@@ -14,9 +14,13 @@ import { multerConfig } from './common/middleware/multer.config';
 import { MainModule } from './main/main.module';
 import { CategoryModule } from './category/category.module';
 import { NotificationModule } from './notification/notification.module';
+import { DatabaseModule } from './database/database.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
+    DatabaseModule,
+    AnalyticsModule,
     AdminModule,
     BranchModule,
     CashierModule,

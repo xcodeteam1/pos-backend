@@ -14,7 +14,6 @@ export async function up(knex: Knex): Promise<void> {
       barcode VARCHAR(50) PRIMARY KEY,
       name VARCHAR(255),
       branch_id INTEGER REFERENCES branch(id) ON DELETE CASCADE,
-      category_id INTEGER REFERENCES category(id) ON DELETE CASCADE,
       price NUMERIC(15,2),
       stock INTEGER DEFAULT 1,
       image VARCHAR(100)[],
