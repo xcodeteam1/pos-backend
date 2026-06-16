@@ -88,6 +88,30 @@ export const todayRange = (): DateRange => {
   return { from: format(startOfDay(now)), to: format(now) };
 };
 
+const parseNaive = (s: string): Date => new Date(s.replace(' ', 'T') + 'Z');
+
+/**
+ * Предыдущий период той же длины (для расчёта роста ±%).
+ * Если диапазон открыт (all_time без дат) — пустой (рост не считается).
+ */
+export const previousRange = (r: DateRange): DateRange => {
+  if (!r.from || !r.to) return {};
+  const fromMs = parseNaive(r.from).getTime();
+  const toMs = parseNaive(r.to).getTime();
+  const span = toMs - fromMs;
+  return {
+    from: format(new Date(fromMs - span)),
+    to: format(new Date(fromMs)),
+  };
+};
+
+/** Длина диапазона в днях (для avg/день и «хватит на N дней»). */
+export const rangeDays = (r: DateRange): number | undefined => {
+  if (!r.from || !r.to) return undefined;
+  const ms = parseNaive(r.to).getTime() - parseNaive(r.from).getTime();
+  return Math.max(1, Math.round(ms / 86400000));
+};
+
 /** Разбор query-параметров period/from/to в конкретный диапазон. */
 export const resolveRange = (
   period?: AnalyticsPeriod,

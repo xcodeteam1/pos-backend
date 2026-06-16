@@ -9,6 +9,8 @@ import {
   AnalyticsQueryDto,
   DailyChartQueryDto,
   MonthlyChartQueryDto,
+  ProductAnalysisQueryDto,
+  ProductBasketQueryDto,
   SummaryQueryDto,
   TopProductsQueryDto,
 } from './dto/analytics-query.dto';
@@ -128,6 +130,34 @@ export class AnalyticsController {
   @ApiStandardResponses()
   getTopProducts(@Query() query: TopProductsQueryDto) {
     return this.service.getTopProducts(query);
+  }
+
+  @HttpCode(200)
+  @Get('products/analysis')
+  @ApiOperation({
+    summary: 'Анализ продаж товаров (админ)',
+    description:
+      'Таблица товар → метрики: продажи, выручка, маржа, маржинальность, возвраты, остаток, оборачиваемость («хватит на N дней»), рост ±%, вклад в выручку, мёртвый сток, продажи ниже себестоимости. Фильтры: period/from/to, branch, category, cashier, payment_type, q, only_dead_stock, only_below_cost. Сортировка: revenue|units|margin|returns|stock.',
+  })
+  @ApiOkResponse({ description: 'Таблица анализа товаров + пагинация + сводка' })
+  @ApiStandardResponses()
+  getProductAnalysis(@Query() query: ProductAnalysisQueryDto) {
+    return this.service.getProductAnalysis(query);
+  }
+
+  @HttpCode(200)
+  @Get('products/basket')
+  @ApiOperation({
+    summary: 'Анализ корзины «часто покупают вместе»',
+    description:
+      'Пары товаров, которые чаще всего встречаются в одном чеке (receipt_id). Фильтры: period/from/to, branch, limit.',
+  })
+  @ApiOkResponse({
+    description: 'Массив { barcode_a, name_a, barcode_b, name_b, together_count }',
+  })
+  @ApiStandardResponses()
+  getProductBasket(@Query() query: ProductBasketQueryDto) {
+    return this.service.getProductBasket(query);
   }
 
   @HttpCode(200)

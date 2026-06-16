@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import {
   AnalyticsFilters,
   AnalyticsRepository,
+  BasketPair,
   CashierAggregate,
+  ProductAnalysisFilter,
+  ProductAnalysisRow,
   ProductStats,
   TopProduct,
 } from './analytics.repository';
@@ -12,6 +15,8 @@ import {
   DailyChartQueryDto,
   MonthlyChartQueryDto,
   PaymentType,
+  ProductAnalysisQueryDto,
+  ProductBasketQueryDto,
   SummaryQueryDto,
   TopProductsQueryDto,
 } from './dto/analytics-query.dto';
@@ -19,10 +24,33 @@ import {
   DateRange,
   dayBucket,
   monthBucket,
+  previousRange,
+  rangeDays,
   resolveRange,
   todayRange,
   currentMonthRange,
 } from './analytics.period';
+
+export interface ProductAnalysisItem {
+  barcode: string;
+  name: string | null;
+  category_name: string | null;
+  stock: number;
+  units_sold: number;
+  revenue: number;
+  cost: number;
+  margin: number;
+  margin_percent: number;
+  receipts_count: number;
+  returns_qty: number;
+  returns_percent: number;
+  growth_percent: number | null;
+  contribution_percent: number;
+  avg_per_day: number | null;
+  days_of_supply: number | null;
+  below_cost: boolean;
+  is_dead_stock: boolean;
+}
 
 interface BaseFilters {
   branch_id?: number;
@@ -302,6 +330,122 @@ export class AnalyticsService {
   /** §9.1: статистика по товарам (замена /sale/product-statistics). */
   async getProductStats(branch_id?: number): Promise<ProductStats> {
     return this.repo.productStats(branch_id);
+  }
+
+  private mapAnalysisRow(
+    r: ProductAnalysisRow,
+    totalRevenue: number,
+    days?: number,
+  ): ProductAnalysisItem {
+    const margin_percent = r.revenue > 0 ? round2((r.margin / r.revenue) * 100) : 0;
+    const soldAndReturned = r.units_sold + r.returns_qty;
+    const returns_percent =
+      soldAndReturned > 0 ? round2((r.returns_qty / soldAndReturned) * 100) : 0;
+    const growth_percent =
+      r.prev_revenue > 0
+        ? round2(((r.revenue - r.prev_revenue) / r.prev_revenue) * 100)
+        : null;
+    const contribution_percent =
+      totalRevenue > 0 ? round2((r.revenue / totalRevenue) * 100) : 0;
+    const avg_per_day = days ? round2(r.units_sold / days) : null;
+    const days_of_supply =
+      avg_per_day && avg_per_day > 0 ? round2(r.stock / avg_per_day) : null;
+
+    return {
+      barcode: r.barcode,
+      name: r.name,
+      category_name: r.category_name,
+      stock: r.stock,
+      units_sold: r.units_sold,
+      revenue: round2(r.revenue),
+      cost: round2(r.cost),
+      margin: round2(r.margin),
+      margin_percent,
+      receipts_count: r.receipts_count,
+      returns_qty: r.returns_qty,
+      returns_percent,
+      growth_percent,
+      contribution_percent,
+      avg_per_day,
+      days_of_supply,
+      below_cost: r.below_cost === 1,
+      is_dead_stock: r.units_sold === 0 && r.stock > 0,
+    };
+  }
+
+  /** Анализ продаж товаров (только админ): таблица + сводка. */
+  async getProductAnalysis(dto: ProductAnalysisQueryDto) {
+    const range = resolveRange(dto.period, dto.from, dto.to);
+    const prev = previousRange(range);
+    const days = rangeDays(range);
+    const includeDebt = this.effectiveIncludeDebt(dto.include_debt, dto.payment_type);
+
+    const filter: ProductAnalysisFilter = {
+      from: range.from,
+      to: range.to,
+      prevFrom: prev.from,
+      prevTo: prev.to,
+      branch_id: dto.branch_id,
+      category_id: dto.category_id,
+      cashier_id: dto.cashier_id,
+      payment_type: dto.payment_type,
+    };
+
+    const [list, summary] = await Promise.all([
+      this.repo.productAnalysis(
+        filter,
+        includeDebt,
+        dto.q,
+        dto.sort,
+        dto.order,
+        Boolean(dto.only_dead_stock),
+        Boolean(dto.only_below_cost),
+        dto.page,
+        dto.pageSize,
+      ),
+      this.repo.productAnalysisSummary(filter, includeDebt),
+    ]);
+
+    const data = list.rows.map((r) =>
+      this.mapAnalysisRow(r, summary.total_revenue, days),
+    );
+
+    return {
+      data,
+      pagination: {
+        page: dto.page,
+        pageSize: dto.pageSize,
+        total: list.total,
+        totalPages: Math.ceil(list.total / dto.pageSize),
+      },
+      summary: {
+        total_revenue: round2(summary.total_revenue),
+        total_cost: round2(summary.total_cost),
+        total_margin: round2(summary.total_revenue - summary.total_cost),
+        margin_percent:
+          summary.total_revenue > 0
+            ? round2(
+                ((summary.total_revenue - summary.total_cost) /
+                  summary.total_revenue) *
+                  100,
+              )
+            : 0,
+        total_units: summary.total_units,
+        products_count: summary.products_count,
+        dead_stock_count: summary.dead_stock_count,
+        below_cost_count: summary.below_cost_count,
+      },
+    };
+  }
+
+  /** Анализ корзины: «часто покупают вместе». */
+  async getProductBasket(dto: ProductBasketQueryDto): Promise<{ data: BasketPair[] }> {
+    const range = resolveRange(dto.period, dto.from, dto.to);
+    const data = await this.repo.productBasket(
+      { from: range.from, to: range.to, branch_id: dto.branch_id },
+      dto.limit,
+    );
+    return { data };
   }
 
   // ---- Совместимость со старым фронтом (§5.2, deprecated wrappers) ----
