@@ -8,7 +8,7 @@ export class MainService {
     return await this.mainRepo.selectProductMain();
   }
   async selectSixMoth() {
-    return await this.mainRepo.selectSixMoth();
+    return await this.mainRepo.selectSixMonth();
   }
   async selectDiagram() {
     return await this.mainRepo.selectDiagram();

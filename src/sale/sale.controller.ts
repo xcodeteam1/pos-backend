@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { SaleService } from './sale.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { SearchSalesDto } from './dto/search-sale.dto';
@@ -60,5 +60,37 @@ export class SaleController {
   @ApiBody({ type: CreateSaleDto, isArray: true })
   createProductCont(@Body() body: CreateSaleDto[]) {
     return this.service.createSale(body);
+  }
+
+
+    @HttpCode(200)
+  @Get('total-sales')
+  @ApiOperation({ summary: 'Umumiy jami sotuv summasi' })
+  getTotalSales() {
+    return this.service.getTotalSales();
+  }
+
+  // 2. Bu oydagi umumiy jami sotuv summasi
+  @HttpCode(200)
+  @Get('current-month-sales')
+  @ApiOperation({ summary: 'Bu oydagi umumiy jami sotuv summasi' })
+  getCurrentMonthSales() {
+    return this.service.getCurrentMonthSales();
+  }
+
+  // 3. To'liq sotuv statistikasi
+  @HttpCode(200)
+  @Get('statistics')
+  @ApiOperation({ summary: 'To\'liq sotuv statistikasi (qarz va qaytarilganlar bilan)' })
+  getSalesStatistics() {
+    return this.service.getSalesStatistics();
+  }
+
+  // 4. Mahsulotlar statistikasi
+  @HttpCode(200)
+  @Get('product-statistics')
+  @ApiOperation({ summary: 'Umumiy va yangi mahsulotlar statistikasi' })
+  getProductStatistics() {
+    return this.service.getProductStatistics();
   }
 }

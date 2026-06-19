@@ -95,89 +95,211 @@ const searchDateQuery: string = `
 `;
 const selectByIDCashierQuery: string = `
     SELECT *FROM cashier WHERE id = ?;`;
+    
+
+
+
+    // sale.repository.ts ga qo'shing
+
+// 1. Umumiy jami sotuv summasi (barchasi)
+const selectTotalSalesQuery: string = `
+  SELECT 
+    COALESCE(SUM(s.price * s.quantity), 0) AS total_sales
+  FROM sale s
+  WHERE s.is_debt = FALSE;
+`;
+
+// 2. Bu oydagi umumiy jami sotuv summasi
+const selectCurrentMonthSalesQuery: string = `
+  SELECT 
+    COALESCE(SUM(s.price * s.quantity), 0) AS current_month_sales
+  FROM sale s
+  WHERE s.is_debt = FALSE
+    AND s.created_at >= date_trunc('month', CURRENT_DATE)
+    AND s.created_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month';
+`;
+
+// 3. Umumiy statistika (qarz va qaytarilganlar bilan)
+const selectSalesStatisticsQuery: string = `
+  SELECT 
+    -- Umumiy sotuvlar (qarz bo'lmaganlar)
+    COALESCE(SUM(s.price * s.quantity) FILTER (WHERE s.is_debt = FALSE), 0) AS total_sales,
+    
+    -- Bu oydagi sotuvlar (qarz bo'lmaganlar)
+    COALESCE(SUM(s.price * s.quantity) FILTER (
+      WHERE s.is_debt = FALSE 
+        AND s.created_at >= date_trunc('month', CURRENT_DATE)
+        AND s.created_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+    ), 0) AS current_month_sales,
+    
+    -- Umumiy qarzlar
+    COALESCE((
+      SELECT SUM(debt_amount) 
+      FROM debt 
+      WHERE debt_amount > 0
+    ), 0) AS total_debt,
+    
+    -- Bu oydagi qarzlar
+    COALESCE((
+      SELECT SUM(debt_amount) 
+      FROM debt 
+      WHERE debt_amount > 0
+        AND created_at >= date_trunc('month', CURRENT_DATE)
+        AND created_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+    ), 0) AS current_month_debt,
+    
+    -- To'langan qarzlar (umumiy)
+    COALESCE((
+      SELECT SUM(amount) 
+      FROM debt 
+      WHERE created_at != updated_at
+    ), 0) AS total_paid_debt,
+    
+    -- Bu oyda to'langan qarzlar
+    COALESCE((
+      SELECT SUM(amount) 
+      FROM debt 
+      WHERE created_at != updated_at
+        AND updated_at >= date_trunc('month', CURRENT_DATE)
+        AND updated_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+    ), 0) AS current_month_paid_debt,
+    
+    -- Umumiy qaytarilganlar
+    COALESCE((
+      SELECT SUM(r.quantity * (
+        SELECT p.price 
+        FROM product p 
+        WHERE p.barcode = r.item_barcode 
+        LIMIT 1
+      ))
+      FROM return r
+    ), 0) AS total_returns,
+    
+    -- Bu oydagi qaytarilganlar
+    COALESCE((
+      SELECT SUM(r.quantity * (
+        SELECT p.price 
+        FROM product p 
+        WHERE p.barcode = r.item_barcode 
+        LIMIT 1
+      ))
+      FROM return r
+      WHERE r.created_at >= date_trunc('month', CURRENT_DATE)
+        AND r.created_at < date_trunc('month', CURRENT_DATE) + INTERVAL '1 month'
+    ), 0) AS current_month_returns
+    
+  FROM sale s;
+`;
+
+// 4. Mahsulotlar statistikasi
+const selectProductStatisticsQuery: string = `
+  SELECT 
+    COUNT(*) AS total_products,
+    COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE)) AS new_products,
+    COUNT(*) FILTER (WHERE stock <= 10 AND is_deleted = FALSE) AS low_stock_products,
+    COUNT(*) FILTER (WHERE stock = 0 AND is_deleted = FALSE) AS out_of_stock_products
+  FROM product
+  WHERE is_deleted = FALSE;
+`;
+
 @Injectable()
 export class SaleRepo {
   async selectDailySale() {
     const res = await db.raw(selectDailySaleQurey);
     return res.rows;
   }
-  async getNetProfit(
-    from?: string,
-    to?: string,
-    branch_id?: number,
-    cashier_id?: number,
-  ) {
-    const params: any[] = [];
+ async getNetProfit(from?: string, to?: string, branch_id?: number, cashier_id?: number) {
+  const saleParams: any[] = [];
+  const debtParams: any[] = [];
+  const returnParams: any[] = [];
 
-    let saleFilter = 'WHERE 1=1';
-    let debtFilter = 'WHERE 1=1';
-    let returnFilter = 'WHERE 1=1';
+  let saleFilter = 'WHERE 1=1';
+  let debtFilter = 'WHERE 1=1';
+  let returnFilter = 'WHERE 1=1';
 
-    // ------------------ DATE FILTER ------------------
+  if (from) {
+    saleFilter += ' AND s.created_at >= ?';
+    debtFilter += ' AND d.created_at >= ?';
+    returnFilter += ' AND r.created_at >= ?';
+    saleParams.push(from);
+    debtParams.push(from);
+    returnParams.push(from);
+  }
 
-    if (from) {
-      saleFilter += ' AND s.created_at >= ?';
-      debtFilter += ' AND d.created_at >= ?';
-      returnFilter += ' AND r.created_at >= ?';
-      params.push(from, from, from);
-    }
+  if (to) {
+    saleFilter += ' AND s.created_at <= ?';
+    debtFilter += ' AND d.created_at <= ?';
+    returnFilter += ' AND r.created_at <= ?';
+    saleParams.push(to);
+    debtParams.push(to);
+    returnParams.push(to);
+  }
 
-    if (to) {
-      saleFilter += ' AND s.created_at <= ?';
-      debtFilter += ' AND d.created_at <= ?';
-      returnFilter += ' AND r.created_at <= ?';
-      params.push(to, to, to);
-    }
+  if (branch_id) {
+    saleFilter += ' AND p.branch_id = ?';
+    debtFilter += ' AND p.branch_id = ?';
+    returnFilter += ' AND p.branch_id = ?';
+    saleParams.push(branch_id);
+    debtParams.push(branch_id);
+    returnParams.push(branch_id);
+  }
 
-    // ------------------ BRANCH FILTER ------------------
+  if (cashier_id) {
+    saleFilter += ' AND s.cashier_id = ?';
+    debtFilter += ' AND d.customer_id = ?';
+    saleParams.push(cashier_id);
+    debtParams.push(cashier_id);
+  }
 
-    if (branch_id) {
-      saleFilter += ' AND p.branch_id = ?';
-      debtFilter += ' AND p.branch_id = ?';
-      returnFilter += ' AND p.branch_id = ?';
-      params.push(branch_id, branch_id, branch_id);
-    }
+  const query = `
+    SELECT
+      COALESCE((
+        SELECT SUM((p.price - p.real_price) * s.quantity)
+        FROM sale s
+        JOIN product p ON p.barcode = s.item_barcode
+        ${saleFilter}
+      ), 0)
+      +
+      COALESCE((
+        SELECT SUM((p.price - p.real_price) * d.quantity)
+        FROM debt d
+        JOIN product p ON p.barcode = d.item_barcode
+        ${debtFilter}
+      ), 0)
+      -
+      COALESCE((
+        SELECT SUM((p.price - p.real_price) * r.quantity)
+        FROM return r
+        JOIN product p ON p.barcode = r.item_barcode
+        ${returnFilter}
+      ), 0)
+      AS net_profit;
+  `;
 
-    // ------------------ CASHIER FILTER ------------------
+  const params = [...saleParams, ...debtParams, ...returnParams];
+  const res = await db.raw(query, params);
+  return res.rows[0];
+}
 
-    if (cashier_id) {
-      saleFilter += ' AND s.cashier_id = ?';
-      debtFilter += ' AND d.customer_id = ?'; // agar debt ham kassirga bog‘langan bo‘lsa shu
-      params.push(cashier_id, cashier_id);
-    }
-
-    const query = `
-      SELECT
-        -- sotuvdan sof foyda
-        COALESCE((
-          SELECT SUM((p.price - p.real_price) * s.quantity)
-          FROM sale s
-          JOIN product p ON p.barcode = s.item_barcode
-          ${saleFilter}
-        ), 0)
-        +
-        -- qarz savdosidan sof foyda
-        COALESCE((
-          SELECT SUM((p.price - p.real_price) * d.quantity)
-          FROM debt d
-          JOIN product p ON p.barcode = d.item_barcode
-          ${debtFilter}
-        ), 0)
-        -
-        -- qaytgan tovar zarar
-        COALESCE((
-          SELECT SUM((p.price - p.real_price) * r.quantity)
-          FROM return r
-          JOIN product p ON p.barcode = r.item_barcode
-          ${returnFilter}
-        ), 0)
-        AS net_profit;
-    `;
-
-    const res = await db.raw(query, params);
+  async getTotalSales() {
+    const res = await db.raw(selectTotalSalesQuery);
     return res.rows[0];
   }
 
+  async getCurrentMonthSales() {
+    const res = await db.raw(selectCurrentMonthSalesQuery);
+    return res.rows[0];
+  }
+
+  async getSalesStatistics() {
+    const res = await db.raw(selectSalesStatisticsQuery);
+    return res.rows[0];
+  }
+
+  async getProductStatistics() {
+    const res = await db.raw(selectProductStatisticsQuery);
+    return res.rows[0];
+  }
   async searchNameBarcode(q: string) {
     const res = await db.raw(searchNameBarcodeQuery, [`%${q}%`, `%${q}%`]);
     return res.rows;
